@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Скорость игры" />
+
+    <SeekBar
+        android:id="@+id/sbGameSpeed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="10"
+        android:progress="5" />
+
+    <TextView
+        android:id="@+id/tvGameSpeedValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Скорость игры: 5" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Максимальное количество тараканов"
+        android:layout_marginTop="16dp" />
+
+    <SeekBar
+        android:id="@+id/sbMaxRoaches"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="50"
+        android:progress="20" />
+
+    <TextView
+        android:id="@+id/tvMaxRoachesValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Макс. тараканов: 20" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Интервал появления бонусов"
+        android:layout_marginTop="16dp" />
+
+    <SeekBar
+        android:id="@+id/sbBonusInterval"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="60"
+        android:progress="10" />
+
+    <TextView
+        android:id="@+id/tvBonusIntervalValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Интервал бонусов: 10s" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Длительность раунда"
+        android:layout_marginTop="16dp" />
+
+    <SeekBar
+        android:id="@+id/sbRoundDuration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="300"
+        android:progress="60" />
+
+    <TextView
+        android:id="@+id/tvRoundDurationValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Длительность раунда: 60s" />
+
+</LinearLayout>
