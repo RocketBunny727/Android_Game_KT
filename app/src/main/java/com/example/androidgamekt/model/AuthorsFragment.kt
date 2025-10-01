@@ -22,7 +22,10 @@ class AuthorsFragment : Fragment() {
         val authors = listOf(
             Author("Гузенков Семён", R.drawable.author1),
             Author("Номоконов Данил", R.drawable.author2)
-        )
+        ).map { author ->
+            author.copy(photoResId = if (resources.getIdentifier("author${author.photoResId - R.drawable.author1 + 1}", "drawable", requireContext().packageName) == 0)
+                R.drawable.ic_launcher_background else author.photoResId)
+        }
 
         val adapter = AuthorsAdapter(authors)
         listView.adapter = adapter

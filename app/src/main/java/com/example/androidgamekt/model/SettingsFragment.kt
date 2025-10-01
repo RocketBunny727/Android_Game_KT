@@ -25,33 +25,32 @@ class SettingsFragment : Fragment() {
         val sbRoundDuration = view.findViewById<SeekBar>(R.id.sbRoundDuration)
         val tvRoundDuration = view.findViewById<TextView>(R.id.tvRoundDurationValue)
 
+        sbGameSpeed.isEnabled = false
+        sbMaxRoaches.isEnabled = false
+        sbBonusInterval.isEnabled = false
+        sbRoundDuration.isEnabled = false
+
+        val difficultyNames = mapOf(
+            0 to "Лёгкий",
+            1 to "Средний",
+            2 to "Сложный",
+            3 to "Дезинсектор"
+        )
+
+        // Инициализация значений
+        sbGameSpeed.progress = GameSettings.instance.difficulty
+        tvGameSpeed.text = "Сложность: ${difficultyNames[GameSettings.instance.difficulty]}"
+        sbMaxRoaches.progress = 0
+        tvMaxRoaches.text = "Макс. жуков: (зависит от сложности)"
+        sbBonusInterval.progress = 0
+        tvBonusInterval.text = "Интервал бонусов: (зависит от сложности)"
+        sbRoundDuration.progress = 0
+        tvRoundDuration.text = "Длительность раунда: (зависит от сложности)"
+
         sbGameSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvGameSpeed.text = "Скорость игры: $progress"
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        sbMaxRoaches.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvMaxRoaches.text = "Макс. тараканов: $progress"
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        sbBonusInterval.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvBonusInterval.text = "Интервал бонусов: ${progress}s"
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        sbRoundDuration.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                tvRoundDuration.text = "Длительность раунда: ${progress}s"
+                tvGameSpeed.text = "Сложность: ${difficultyNames[progress]}"
+                GameSettings.instance.difficulty = progress
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}

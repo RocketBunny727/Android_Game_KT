@@ -8,6 +8,12 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.fragment.app.Fragment
 import com.example.androidgamekt.R
+import com.example.androidgamekt.data.GameRepository
+import com.example.androidgamekt.data.PlayerEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -18,6 +24,7 @@ class SignUpFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View? {
         val view = inflater.inflate(R.layout.signup_activity, container, false)
+        val repository = GameRepository(requireContext())
 
         val etFullName = view.findViewById<EditText>(R.id.etFullName)
         val rgGender = view.findViewById<RadioGroup>(R.id.rgGender)
@@ -32,6 +39,13 @@ class SignUpFragment : Fragment() {
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, courses)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spCourse.adapter = adapter
+
+        val difficultyNames = mapOf(
+            0 to "Лёгкий",
+            1 to "Средний",
+            2 to "Сложный",
+            3 to "Дезинсектор"
+        )
 
         var selectedDate = ""
 
@@ -71,6 +85,7 @@ class SignUpFragment : Fragment() {
 
             val course = spCourse.selectedItem.toString()
             val difficulty = sbDifficulty.progress
+            GameSettings.instance.difficulty = difficulty // Сохранение выбранной сложности
             val zodiacSign = getZodiacSign(selectedDate)
 
             val zodiacDrawable = when (zodiacSign) {
@@ -87,19 +102,32 @@ class SignUpFragment : Fragment() {
                 "Водолей" -> R.drawable.aquarius
                 "Рыбы" -> R.drawable.pisces
                 else -> R.drawable.ic_launcher_background
+            }.let { resId ->
+                if (resources.getIdentifier(resources.getResourceEntryName(resId), "drawable", requireContext().packageName) == 0)
+                    R.drawable.ic_launcher_background else resId
             }
             ivZodiac.setImageResource(zodiacDrawable)
 
-            val player = Player(fullName, gender, course, difficulty, selectedDate, zodiacSign)
+            val player = PlayerEntity(
+                fullName = fullName,
+                gender = gender,
+                course = course,
+                difficulty = difficulty,
+                birthDate = selectedDate,
+                zodiacSign = zodiacSign
+            )
 
-            tvResult.text = """
-                ФИО: ${player.fullName}
-                Пол: ${player.gender}
-                Курс: ${player.course}
-                Уровень сложности: ${player.difficulty}
-                Дата рождения: ${player.birthDate}
-                Знак зодиака: ${player.zodiacSign}
-            """.trimIndent()
+            CoroutineScope(Dispatchers.Main).launch {
+                withContext(Dispatchers.IO) { repository.insertPlayer(player) }
+                tvResult.text = """
+                    ФИО: ${player.fullName}
+                    Пол: ${player.gender}
+                    Курс: ${player.course}
+                    Уровень сложности: ${difficultyNames[difficulty]}
+                    Дата рождения: ${player.birthDate}
+                    Знак зодиака: ${player.zodiacSign}
+                """.trimIndent()
+            }
         }
 
         return view

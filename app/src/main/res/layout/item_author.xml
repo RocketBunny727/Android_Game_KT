@@ -7,8 +7,9 @@
 
     <ImageView
         android:id="@+id/ivAuthorPhoto"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:contentDescription="Фото автора"
         android:scaleType="centerCrop" />
 
     <TextView
@@ -17,6 +18,6 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical"
         android:layout_marginStart="16dp"
-        android:textSize="16sp" />
+        android:textSize="18sp" />
 
 </LinearLayout>
