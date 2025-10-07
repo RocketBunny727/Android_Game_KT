@@ -23,7 +23,7 @@ class RecordsFragment : Fragment() {
         val repository = GameRepository(requireContext())
 
         CoroutineScope(Dispatchers.Main).launch {
-            val scores = withContext(Dispatchers.IO) { repository.getAllScores() }
+            val scores = withContext(Dispatchers.IO) { repository.getScoresWithPlayerNames() }
             val adapter = RecordsAdapter(scores)
             listView.adapter = adapter
         }

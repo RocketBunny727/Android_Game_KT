@@ -25,11 +25,6 @@ class SettingsFragment : Fragment() {
         val sbRoundDuration = view.findViewById<SeekBar>(R.id.sbRoundDuration)
         val tvRoundDuration = view.findViewById<TextView>(R.id.tvRoundDurationValue)
 
-        sbGameSpeed.isEnabled = false
-        sbMaxRoaches.isEnabled = false
-        sbBonusInterval.isEnabled = false
-        sbRoundDuration.isEnabled = false
-
         val difficultyNames = mapOf(
             0 to "Лёгкий",
             1 to "Средний",
@@ -37,20 +32,76 @@ class SettingsFragment : Fragment() {
             3 to "Дезинсектор"
         )
 
-        // Инициализация значений
+        // Initialize
+        sbGameSpeed.max = 3
         sbGameSpeed.progress = GameSettings.instance.difficulty
         tvGameSpeed.text = "Сложность: ${difficultyNames[GameSettings.instance.difficulty]}"
-        sbMaxRoaches.progress = 0
-        tvMaxRoaches.text = "Макс. жуков: (зависит от сложности)"
-        sbBonusInterval.progress = 0
-        tvBonusInterval.text = "Интервал бонусов: (зависит от сложности)"
-        sbRoundDuration.progress = 0
-        tvRoundDuration.text = "Длительность раунда: (зависит от сложности)"
+
+        sbMaxRoaches.max = 20
+        sbBonusInterval.max = 60
+        sbRoundDuration.max = 180
+
+        val maxRoaches = GameSettings.instance.overrideMaxBugs ?: 0
+        val bonusInterval = GameSettings.instance.overrideBonusIntervalSec ?: 0
+        val roundDuration = GameSettings.instance.overrideRoundDurationSec ?: 0
+
+        sbMaxRoaches.progress = maxRoaches
+        tvMaxRoaches.text = if (maxRoaches == 0) "Макс. жуков: по сложности" else "Макс. жуков: $maxRoaches"
+
+        sbBonusInterval.progress = bonusInterval
+        tvBonusInterval.text = if (bonusInterval == 0) "Интервал бонусов: по сложности" else "Интервал бонусов: ${bonusInterval}s"
+
+        sbRoundDuration.progress = roundDuration
+        tvRoundDuration.text = if (roundDuration == 0) "Длительность раунда: по сложности" else "Длительность раунда: ${roundDuration}s"
+
+        fun bumpVersion() { GameSettings.instance.version++ }
 
         sbGameSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 tvGameSpeed.text = "Сложность: ${difficultyNames[progress]}"
-                GameSettings.instance.difficulty = progress
+                if (GameSettings.instance.difficulty != progress) {
+                    GameSettings.instance.difficulty = progress
+                    bumpVersion()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        sbMaxRoaches.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val newValue = if (progress == 0) null else progress
+                if (GameSettings.instance.overrideMaxBugs != newValue) {
+                    GameSettings.instance.overrideMaxBugs = newValue
+                    bumpVersion()
+                }
+                tvMaxRoaches.text = if (progress == 0) "Макс. жуков: по сложности" else "Макс. жуков: $progress"
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        sbBonusInterval.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val newValue = if (progress == 0) null else progress
+                if (GameSettings.instance.overrideBonusIntervalSec != newValue) {
+                    GameSettings.instance.overrideBonusIntervalSec = newValue
+                    bumpVersion()
+                }
+                tvBonusInterval.text = if (progress == 0) "Интервал бонусов: по сложности" else "Интервал бонусов: ${progress}s"
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        sbRoundDuration.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val newValue = if (progress == 0) null else progress
+                if (GameSettings.instance.overrideRoundDurationSec != newValue) {
+                    GameSettings.instance.overrideRoundDurationSec = newValue
+                    bumpVersion()
+                }
+                tvRoundDuration.text = if (progress == 0) "Длительность раунда: по сложности" else "Длительность раунда: ${progress}s"
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}

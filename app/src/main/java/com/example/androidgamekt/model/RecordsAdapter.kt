@@ -6,12 +6,12 @@ import android.view.ViewGroup
 import android.widget.BaseAdapter
 import android.widget.TextView
 import com.example.androidgamekt.R
-import com.example.androidgamekt.data.ScoreEntity
+import com.example.androidgamekt.data.ScoreWithPlayer
 
-class RecordsAdapter(private val scores: List<ScoreEntity>) : BaseAdapter() {
+class RecordsAdapter(private val scores: List<ScoreWithPlayer>) : BaseAdapter() {
     override fun getCount(): Int = scores.size
     override fun getItem(position: Int): Any = scores[position]
-    override fun getItemId(position: Int): Long = position.toLong()
+    override fun getItemId(position: Int): Long = scores[position].id.toLong()
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
         val view = convertView ?: LayoutInflater.from(parent?.context).inflate(R.layout.item_record, parent, false)
@@ -19,8 +19,9 @@ class RecordsAdapter(private val scores: List<ScoreEntity>) : BaseAdapter() {
         val playerName = view.findViewById<TextView>(R.id.tvPlayerName)
         val scoreValue = view.findViewById<TextView>(R.id.tvScore)
 
-        playerName.text = "Игрок #$score.playerId"
-        scoreValue.text = "Счёт: $score.score, Сложность: ${listOf("Лёгкий", "Средний", "Сложный", "Дезинсектор")[score.difficulty]}"
+        playerName.text = score.playerName
+        val difficultyName = listOf("Лёгкий", "Средний", "Сложный", "Дезинсектор").getOrElse(score.difficulty) { "?" }
+        scoreValue.text = "Счёт: ${score.score}, Сложность: $difficultyName"
 
         return view
     }

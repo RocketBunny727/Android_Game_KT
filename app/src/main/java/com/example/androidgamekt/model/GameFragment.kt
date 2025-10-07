@@ -17,6 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
+import android.view.ViewTreeObserver
+import androidx.viewpager2.widget.ViewPager2
+
 
 data class Bug(val id: Int, var x: Float, var y: Float, var speedX: Float, var speedY: Float, val type: BugType)
 
@@ -30,6 +33,9 @@ class GameFragment : Fragment() {
     private var timeElapsed = 0L
     private var lastBonusTime = 0L
     private var lastPoisonTime = 0L
+    private var lastSpawnTime = -1000L
+    private var nextBugId = 1
+    private var observedSettingsVersion = GameSettings.instance.version
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var gameLayout: ViewGroup
     private lateinit var tvScore: TextView
@@ -65,23 +71,64 @@ class GameFragment : Fragment() {
             tvScore.text = "Очки: $score"
         }
 
-        startGameLoop()
+        // Delay game start until layout has been measured to avoid zero width/height
+        val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (gameLayout.width > 0 && gameLayout.height > 0) {
+                    gameLayout.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    resetGameState()
+                    startGameLoop()
+                }
+            }
+        }
+        gameLayout.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+
         return view
     }
 
+    private fun resetGameState() {
+        handler.removeCallbacksAndMessages(null)
+        bugs.clear()
+        gameLayout.removeAllViews()
+        score = 0
+        timeElapsed = 0
+        lastBonusTime = 0
+        lastPoisonTime = 0
+        lastSpawnTime = -1000L
+        nextBugId = 1
+        tvScore.text = "Очки: $score"
+        observedSettingsVersion = GameSettings.instance.version
+    }
+
+    private fun resolveConfig(): DifficultyConfig {
+        val base = difficultySettings[GameSettings.instance.difficulty] ?: difficultySettings[0]!!
+        val maxBugs = GameSettings.instance.overrideMaxBugs ?: base.maxBugs
+        val bonusInterval = GameSettings.instance.overrideBonusIntervalSec ?: base.bonusInterval
+        val roundDuration = GameSettings.instance.overrideRoundDurationSec ?: base.roundDuration
+        return base.copy(maxBugs = maxBugs, bonusInterval = bonusInterval, roundDuration = roundDuration)
+    }
+
     private fun startGameLoop() {
-        val config = difficultySettings[GameSettings.instance.difficulty]
-            ?: difficultySettings[0]!!
+        val config = resolveConfig()
 
         handler.post(object : Runnable {
             override fun run() {
+                // Restart if settings changed
+                if (observedSettingsVersion != GameSettings.instance.version) {
+                    resetGameState()
+                    startGameLoop()
+                    return
+                }
+
                 if (timeElapsed < config.roundDuration * 1000L) {
-                    if (bugs.size < config.maxBugs) {
+                    val spawnIntervalMs = (400L / config.speedMultiplier).toLong().coerceAtLeast(120L)
+                    if (bugs.size < config.maxBugs && (timeElapsed - lastSpawnTime) >= spawnIntervalMs) {
                         val isBonus = (timeElapsed - lastBonusTime) >= config.bonusInterval * 1000L
                         val isPoison = Random.nextFloat() < config.poisonBugChance && (timeElapsed - lastPoisonTime) >= 1000L
                         if (isBonus) lastBonusTime = timeElapsed
                         if (isPoison) lastPoisonTime = timeElapsed
                         addBug(isBonus, isPoison)
+                        lastSpawnTime = timeElapsed
                     }
                     updateBugs()
                     timeElapsed += 16L
@@ -103,17 +150,15 @@ class GameFragment : Fragment() {
                         }
                     }
                     handler.removeCallbacks(this)
-                    requireActivity().supportFragmentManager.beginTransaction()
-                        .replace(R.id.viewPager, MenuFragment())
-                        .commit()
+                    val viewPager = requireActivity().findViewById<ViewPager2>(R.id.viewPager)
+                    viewPager.currentItem = 0 // back to Menu tab safely
                 }
             }
         })
     }
 
     private fun addBug(isBonus: Boolean, isPoison: Boolean) {
-        val config = difficultySettings[GameSettings.instance.difficulty]
-            ?: difficultySettings[0]!!
+        val config = resolveConfig()
         val type = when {
             isBonus -> BugType.BONUS
             isPoison -> BugType.POISON
@@ -127,11 +172,24 @@ class GameFragment : Fragment() {
             if (resources.getIdentifier(resources.getResourceEntryName(resId), "drawable", requireContext().packageName) == 0)
                 R.drawable.ic_launcher_background else resId
         }
+
+        val minDistance = 110f
+        val position = findNonOverlappingPosition(minDistance, 30) ?: run {
+            // fallback: spawn anyway at random
+            Pair(
+                Random.nextFloat() * (gameLayout.width - 50),
+                Random.nextFloat() * (gameLayout.height - 50)
+            )
+        }
+
         val bugView = ImageView(requireContext()).apply {
             setImageResource(drawableRes)
             layoutParams = ViewGroup.LayoutParams(100, 100)
             setOnClickListener {
-                bugs.removeAll { it.id == tag }
+                val tagId = tag as? Int
+                if (tagId != null) {
+                    bugs.removeAll { it.id == tagId }
+                }
                 score = when (type) {
                     BugType.NORMAL -> score + 10
                     BugType.BONUS -> score + 50
@@ -141,16 +199,31 @@ class GameFragment : Fragment() {
                 gameLayout.removeView(this)
             }
         }
-        val id = bugs.size + 1
+        val id = nextBugId++
         bugView.tag = id
-        val x = Random.nextFloat() * (gameLayout.width - 50)
-        val y = Random.nextFloat() * (gameLayout.height - 50)
+        val x = position.first
+        val y = position.second
         val speedX = (Random.nextFloat() * 4 - 2) * config.speedMultiplier
         val speedY = (Random.nextFloat() * 4 - 2) * config.speedMultiplier
         bugs.add(Bug(id, x, y, speedX, speedY, type))
         bugView.x = x
         bugView.y = y
         gameLayout.addView(bugView)
+    }
+
+    private fun findNonOverlappingPosition(minDistance: Float, maxAttempts: Int): Pair<Float, Float>? {
+        repeat(maxAttempts) {
+            val x = Random.nextFloat() * (gameLayout.width - 50)
+            val y = Random.nextFloat() * (gameLayout.height - 50)
+            val isFarEnough = bugs.all { existing ->
+                val dx = (existing.x + 50f / 2) - (x + 50f / 2)
+                val dy = (existing.y + 50f / 2) - (y + 50f / 2)
+                val distSq = dx * dx + dy * dy
+                distSq >= minDistance * minDistance
+            }
+            if (isFarEnough) return Pair(x, y)
+        }
+        return null
     }
 
     private fun updateBugs() {

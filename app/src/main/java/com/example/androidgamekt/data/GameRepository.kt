@@ -26,4 +26,8 @@ class GameRepository(context: Context) {
     suspend fun getAllScores(): List<ScoreEntity> {
         return scoreDao.getAllScores()
     }
+
+    suspend fun getScoresWithPlayerNames(): List<ScoreWithPlayer> {
+        return scoreDao.getScoresWithPlayerNames()
+    }
 }
