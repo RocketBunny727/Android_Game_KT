@@ -19,21 +19,28 @@ import kotlinx.coroutines.withContext
 import kotlin.random.Random
 import android.view.ViewTreeObserver
 import androidx.viewpager2.widget.ViewPager2
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.content.Context
+import android.media.MediaPlayer
 
 
 data class Bug(val id: Int, var x: Float, var y: Float, var speedX: Float, var speedY: Float, val type: BugType)
 
 enum class BugType {
-    NORMAL, POISON, BONUS
+    NORMAL, POISON, COIN, BONUS_TILT
 }
 
 class GameFragment : Fragment() {
     private val bugs = mutableListOf<Bug>()
     private var score = 0
     private var timeElapsed = 0L
-    private var lastBonusTime = 0L
+    private var lastCoinTime = 0L
     private var lastPoisonTime = 0L
     private var lastSpawnTime = -1000L
+    private var lastFixedBonusTime = 0L
     private var nextBugId = 1
     private var observedSettingsVersion = GameSettings.instance.version
     private val handler = Handler(Looper.getMainLooper())
@@ -41,6 +48,14 @@ class GameFragment : Fragment() {
     private lateinit var tvScore: TextView
     private lateinit var tvTime: TextView
     private lateinit var repository: GameRepository
+
+    private var tiltEnabled = false
+    private var sensorManager: SensorManager? = null
+    private var accelerometer: Sensor? = null
+    private var tiltX: Float = 0f
+    private var tiltY: Float = 0f
+    private var mediaPlayer: MediaPlayer? = null
+
     private val difficultySettings = mapOf(
         0 to DifficultyConfig(1f, 5, 10, 60, 0.1f), // Лёгкий
         1 to DifficultyConfig(1.5f, 7, 8, 60, 0.2f), // Средний
@@ -66,12 +81,14 @@ class GameFragment : Fragment() {
         tvScore = view.findViewById(R.id.tvScore)
         tvTime = view.findViewById(R.id.tvTime)
 
+        sensorManager = requireContext().getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
         gameLayout.setOnClickListener {
             score = (score - 5).coerceAtLeast(0)
             tvScore.text = "Очки: $score"
         }
 
-        // Delay game start until layout has been measured to avoid zero width/height
         val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 if (gameLayout.width > 0 && gameLayout.height > 0) {
@@ -92,12 +109,15 @@ class GameFragment : Fragment() {
         gameLayout.removeAllViews()
         score = 0
         timeElapsed = 0
-        lastBonusTime = 0
+        lastCoinTime = 0
         lastPoisonTime = 0
         lastSpawnTime = -1000L
+        lastFixedBonusTime = 0
         nextBugId = 1
         tvScore.text = "Очки: $score"
         observedSettingsVersion = GameSettings.instance.version
+        tiltEnabled = false
+        stopSound()
     }
 
     private fun resolveConfig(): DifficultyConfig {
@@ -113,7 +133,6 @@ class GameFragment : Fragment() {
 
         handler.post(object : Runnable {
             override fun run() {
-                // Restart if settings changed
                 if (observedSettingsVersion != GameSettings.instance.version) {
                     resetGameState()
                     startGameLoop()
@@ -123,13 +142,26 @@ class GameFragment : Fragment() {
                 if (timeElapsed < config.roundDuration * 1000L) {
                     val spawnIntervalMs = (400L / config.speedMultiplier).toLong().coerceAtLeast(120L)
                     if (bugs.size < config.maxBugs && (timeElapsed - lastSpawnTime) >= spawnIntervalMs) {
-                        val isBonus = (timeElapsed - lastBonusTime) >= config.bonusInterval * 1000L
+                        val isCoinTime = (timeElapsed - lastCoinTime) >= config.bonusInterval * 1000L
                         val isPoison = Random.nextFloat() < config.poisonBugChance && (timeElapsed - lastPoisonTime) >= 1000L
-                        if (isBonus) lastBonusTime = timeElapsed
+                        if (isCoinTime) lastCoinTime = timeElapsed
                         if (isPoison) lastPoisonTime = timeElapsed
-                        addBug(isBonus, isPoison)
+                        val typeToSpawn = when {
+                            isCoinTime -> BugType.COIN
+                            isPoison -> BugType.POISON
+                            else -> BugType.NORMAL
+                        }
+                        addBug(typeToSpawn)
                         lastSpawnTime = timeElapsed
                     }
+
+                    // Fixed 15-second tilt bonus spawn (only one active)
+                    val hasTiltBonus = bugs.any { it.type == BugType.BONUS_TILT }
+                    if (!hasTiltBonus && (timeElapsed - lastFixedBonusTime) >= 15000L) {
+                        addBug(BugType.BONUS_TILT)
+                        lastFixedBonusTime = timeElapsed
+                    }
+
                     updateBugs()
                     timeElapsed += 16L
                     tvTime.text = "Время: ${(config.roundDuration - timeElapsed / 1000).toInt()} сек"
@@ -151,23 +183,19 @@ class GameFragment : Fragment() {
                     }
                     handler.removeCallbacks(this)
                     val viewPager = requireActivity().findViewById<ViewPager2>(R.id.viewPager)
-                    viewPager.currentItem = 0 // back to Menu tab safely
+                    viewPager.currentItem = 0
                 }
             }
         })
     }
 
-    private fun addBug(isBonus: Boolean, isPoison: Boolean) {
+    private fun addBug(type: BugType) {
         val config = resolveConfig()
-        val type = when {
-            isBonus -> BugType.BONUS
-            isPoison -> BugType.POISON
-            else -> BugType.NORMAL
-        }
         val drawableRes = when (type) {
             BugType.NORMAL -> R.drawable.bugs
             BugType.POISON -> R.drawable.bugs2
-            BugType.BONUS -> R.drawable.coint
+            BugType.COIN -> resources.getIdentifier("coin", "drawable", requireContext().packageName).let { if (it == 0) R.drawable.ic_launcher_background else it }
+            BugType.BONUS_TILT -> resources.getIdentifier("bonus", "drawable", requireContext().packageName).let { if (it == 0) R.drawable.ic_launcher_background else it }
         }.let { resId ->
             if (resources.getIdentifier(resources.getResourceEntryName(resId), "drawable", requireContext().packageName) == 0)
                 R.drawable.ic_launcher_background else resId
@@ -175,7 +203,6 @@ class GameFragment : Fragment() {
 
         val minDistance = 110f
         val position = findNonOverlappingPosition(minDistance, 30) ?: run {
-            // fallback: spawn anyway at random
             Pair(
                 Random.nextFloat() * (gameLayout.width - 50),
                 Random.nextFloat() * (gameLayout.height - 50)
@@ -190,10 +217,20 @@ class GameFragment : Fragment() {
                 if (tagId != null) {
                     bugs.removeAll { it.id == tagId }
                 }
-                score = when (type) {
-                    BugType.NORMAL -> score + 10
-                    BugType.BONUS -> score + 50
-                    BugType.POISON -> (score - 20).coerceAtLeast(0)
+                when (type) {
+                    BugType.NORMAL -> {
+                        score += 10
+                    }
+                    BugType.COIN -> {
+                        score += 50
+                    }
+                    BugType.BONUS_TILT -> {
+                        enableTiltControl()
+                        playScream()
+                    }
+                    BugType.POISON -> {
+                        score = (score - 20).coerceAtLeast(0)
+                    }
                 }
                 tvScore.text = "Очки: $score"
                 gameLayout.removeView(this)
@@ -209,6 +246,47 @@ class GameFragment : Fragment() {
         bugView.x = x
         bugView.y = y
         gameLayout.addView(bugView)
+    }
+
+    private fun enableTiltControl() {
+        tiltEnabled = true
+        accelerometer?.let {
+            sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
+        }
+    }
+
+    private fun disableTiltControl() {
+        tiltEnabled = false
+        sensorManager?.unregisterListener(sensorListener)
+    }
+
+    private val sensorListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            if (!tiltEnabled) return
+            if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                tiltX = -event.values[0]
+                tiltY = event.values[1]
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+    }
+
+    private fun playScream() {
+        stopSound()
+        val resId = resources.getIdentifier("mellstroysvist", "raw", requireContext().packageName)
+        if (resId != 0) {
+            mediaPlayer = MediaPlayer.create(requireContext(), resId)
+            mediaPlayer?.setOnCompletionListener {
+                it.release()
+            }
+            mediaPlayer?.start()
+        }
+    }
+
+    private fun stopSound() {
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
     }
 
     private fun findNonOverlappingPosition(minDistance: Float, maxAttempts: Int): Pair<Float, Float>? {
@@ -227,14 +305,16 @@ class GameFragment : Fragment() {
     }
 
     private fun updateBugs() {
+        val tiltAccel = if (tiltEnabled) 0.15f else 0f
         bugs.forEachIndexed { index, bug ->
-            var newX = bug.x + bug.speedX
-            var newY = bug.y + bug.speedY
-            var newSpeedX = bug.speedX
-            var newSpeedY = bug.speedY
+            var newSpeedX = bug.speedX + tiltAccel * tiltX
+            var newSpeedY = bug.speedY + tiltAccel * tiltY
 
-            if (newX < 0 || newX > gameLayout.width - 50) newSpeedX = -bug.speedX
-            if (newY < 0 || newY > gameLayout.height - 50) newSpeedY = -bug.speedY
+            var newX = bug.x + newSpeedX
+            var newY = bug.y + newSpeedY
+
+            if (newX < 0 || newX > gameLayout.width - 50) newSpeedX = -newSpeedX
+            if (newY < 0 || newY > gameLayout.height - 50) newSpeedY = -newSpeedY
             newX = newX.coerceIn(0f, (gameLayout.width - 50).toFloat())
             newY = newY.coerceIn(0f, (gameLayout.height - 50).toFloat())
 
@@ -245,8 +325,25 @@ class GameFragment : Fragment() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (tiltEnabled) {
+            accelerometer?.let {
+                sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sensorManager?.unregisterListener(sensorListener)
+        stopSound()
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         handler.removeCallbacksAndMessages(null)
+        sensorManager?.unregisterListener(sensorListener)
+        stopSound()
     }
 }
