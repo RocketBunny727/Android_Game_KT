@@ -25,6 +25,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.content.Context
 import android.media.MediaPlayer
+import android.widget.Button
 
 
 data class Bug(val id: Int, var x: Float, var y: Float, var speedX: Float, var speedY: Float, val type: BugType)
@@ -47,6 +48,7 @@ class GameFragment : Fragment() {
     private lateinit var gameLayout: ViewGroup
     private lateinit var tvScore: TextView
     private lateinit var tvTime: TextView
+    private lateinit var btnRestart: Button
     private lateinit var repository: GameRepository
 
     private var tiltEnabled = false
@@ -80,6 +82,7 @@ class GameFragment : Fragment() {
         gameLayout = view.findViewById(R.id.gameLayout)
         tvScore = view.findViewById(R.id.tvScore)
         tvTime = view.findViewById(R.id.tvTime)
+        btnRestart = view.findViewById(R.id.btnRestart)
 
         sensorManager = requireContext().getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -87,6 +90,12 @@ class GameFragment : Fragment() {
         gameLayout.setOnClickListener {
             score = (score - 5).coerceAtLeast(0)
             tvScore.text = "Очки: $score"
+        }
+
+        btnRestart.setOnClickListener {
+            btnRestart.visibility = View.GONE
+            resetGameState()
+            startGameLoop()
         }
 
         val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
@@ -140,6 +149,7 @@ class GameFragment : Fragment() {
                 }
 
                 if (timeElapsed < config.roundDuration * 1000L) {
+                    btnRestart.visibility = View.GONE
                     val spawnIntervalMs = (400L / config.speedMultiplier).toLong().coerceAtLeast(120L)
                     if (bugs.size < config.maxBugs && (timeElapsed - lastSpawnTime) >= spawnIntervalMs) {
                         val isCoinTime = (timeElapsed - lastCoinTime) >= config.bonusInterval * 1000L
@@ -155,7 +165,6 @@ class GameFragment : Fragment() {
                         lastSpawnTime = timeElapsed
                     }
 
-                    // Fixed 15-second tilt bonus spawn (only one active)
                     val hasTiltBonus = bugs.any { it.type == BugType.BONUS_TILT }
                     if (!hasTiltBonus && (timeElapsed - lastFixedBonusTime) >= 15000L) {
                         addBug(BugType.BONUS_TILT)
@@ -182,8 +191,7 @@ class GameFragment : Fragment() {
                         }
                     }
                     handler.removeCallbacks(this)
-                    val viewPager = requireActivity().findViewById<ViewPager2>(R.id.viewPager)
-                    viewPager.currentItem = 0
+                    btnRestart.visibility = View.VISIBLE
                 }
             }
         })
