@@ -26,6 +26,8 @@ import android.hardware.SensorManager
 import android.content.Context
 import android.media.MediaPlayer
 import android.widget.Button
+import com.example.androidgamekt.viewmodel.GameViewModel
+import org.koin.androidx.viewmodel.ext.android.activityViewModel
 
 
 data class Bug(val id: Int, var x: Float, var y: Float, var speedX: Float, var speedY: Float, val type: BugType)
@@ -36,12 +38,8 @@ enum class BugType {
 
 class GameFragment : Fragment() {
     private val bugs = mutableListOf<Bug>()
-    private var score = 0
-    private var timeElapsed = 0L
-    private var lastCoinTime = 0L
-    private var lastPoisonTime = 0L
-    private var lastSpawnTime = -1000L
-    private var lastFixedBonusTime = 0L
+    private val gameViewModel: GameViewModel by activityViewModel()
+    // moved to ViewModel: timeElapsed & bonus state
     private var nextBugId = 1
     private var observedSettingsVersion = GameSettings.instance.version
     private val handler = Handler(Looper.getMainLooper())
@@ -90,13 +88,13 @@ class GameFragment : Fragment() {
         accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         gameLayout.setOnClickListener {
-            score = (score - 5).coerceAtLeast(0)
-            tvScore.text = "Очки: $score"
+            gameViewModel.addScore(-5)
         }
 
         btnRestart.setOnClickListener {
             btnRestart.visibility = View.GONE
-            resetGameState()
+            gameViewModel.fullReset()
+            resetGameScene()
             startGameLoop()
         }
 
@@ -104,30 +102,32 @@ class GameFragment : Fragment() {
             override fun onGlobalLayout() {
                 if (gameLayout.width > 0 && gameLayout.height > 0) {
                     gameLayout.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                    resetGameState()
+                    resetGameScene()
                     startGameLoop()
                 }
             }
         }
         gameLayout.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
 
+        // Observe score changes to update UI
+        gameViewModel.score.observe(viewLifecycleOwner) { value ->
+            tvScore.text = "Очки: $value"
+        }
+        // Keep local tiltEnabled mirror for sensor wiring
+        gameViewModel.tiltEnabled.observe(viewLifecycleOwner) { enabled ->
+            tiltEnabled = enabled
+        }
+
         return view
     }
 
-    private fun resetGameState() {
+    private fun resetGameScene() {
         handler.removeCallbacksAndMessages(null)
         bugs.clear()
         gameLayout.removeAllViews()
-        score = 0
-        timeElapsed = 0
-        lastCoinTime = 0
-        lastPoisonTime = 0
-        lastSpawnTime = -1000L
-        lastFixedBonusTime = 0
         nextBugId = 1
-        tvScore.text = "Очки: $score"
+        tvScore.text = "Очки: ${gameViewModel.score.value ?: 0}"
         observedSettingsVersion = GameSettings.instance.version
-        tiltEnabled = false
         stopSound()
         // load last known gold rate from shared prefs
         val stored = com.example.androidgamekt.util.GoldRateStore.load(requireContext()).first
@@ -148,43 +148,45 @@ class GameFragment : Fragment() {
         handler.post(object : Runnable {
             override fun run() {
                 if (observedSettingsVersion != GameSettings.instance.version) {
-                    resetGameState()
+                    resetGameScene()
                     startGameLoop()
                     return
                 }
 
+                val timeElapsed = gameViewModel.timeElapsedMs.value ?: 0L
                 if (timeElapsed < config.roundDuration * 1000L) {
                     btnRestart.visibility = View.GONE
                     val spawnIntervalMs = (400L / config.speedMultiplier).toLong().coerceAtLeast(120L)
-                    if (bugs.size < config.maxBugs && (timeElapsed - lastSpawnTime) >= spawnIntervalMs) {
-                        val isCoinTime = (timeElapsed - lastCoinTime) >= config.bonusInterval * 1000L
-                        val isPoison = Random.nextFloat() < config.poisonBugChance && (timeElapsed - lastPoisonTime) >= 1000L
-                        if (isCoinTime) lastCoinTime = timeElapsed
-                        if (isPoison) lastPoisonTime = timeElapsed
+                    if (bugs.size < config.maxBugs && (timeElapsed - gameViewModel.lastSpawnTimeMs) >= spawnIntervalMs) {
+                        val isCoinTime = (timeElapsed - gameViewModel.lastCoinTimeMs) >= config.bonusInterval * 1000L
+                        val isPoison = Random.nextFloat() < config.poisonBugChance && (timeElapsed - gameViewModel.lastPoisonTimeMs) >= 1000L
+                        if (isCoinTime) gameViewModel.markCoin(timeElapsed)
+                        if (isPoison) gameViewModel.markPoison(timeElapsed)
                         val typeToSpawn = when {
                             isCoinTime -> BugType.COIN
                             isPoison -> BugType.POISON
                             else -> BugType.NORMAL
                         }
                         addBug(typeToSpawn)
-                        lastSpawnTime = timeElapsed
+                        gameViewModel.markSpawn(timeElapsed)
                     }
 
                     val hasTiltBonus = bugs.any { it.type == BugType.BONUS_TILT }
-                    if (!hasTiltBonus && (timeElapsed - lastFixedBonusTime) >= 15000L) {
+                    if (!hasTiltBonus && (timeElapsed - gameViewModel.lastFixedBonusTimeMs) >= 15000L) {
                         addBug(BugType.BONUS_TILT)
-                        lastFixedBonusTime = timeElapsed
+                        gameViewModel.markFixedBonus(timeElapsed)
                     }
 
                     // Golden bug every 20 seconds
-                    if ((timeElapsed - lastGoldSpawnTime) >= 20000L) {
+                    if ((timeElapsed - gameViewModel.lastGoldSpawnTimeMs) >= 20000L) {
                         addBug(BugType.COIN) // reuse COIN type for golden bug image/logic
-                        lastGoldSpawnTime = timeElapsed
+                        gameViewModel.markGold(timeElapsed)
                     }
 
                     updateBugs()
-                    timeElapsed += 16L
-                    tvTime.text = "Время: ${(config.roundDuration - timeElapsed / 1000).toInt()} сек"
+                    gameViewModel.tick(16L)
+                    val newElapsed = (gameViewModel.timeElapsedMs.value ?: 0L)
+                    tvTime.text = "Время: ${(config.roundDuration - newElapsed / 1000).toInt()} сек"
                     handler.postDelayed(this, 16L)
                 } else {
                     if (MenuFragment.selectedPlayerId != 0) {
@@ -193,7 +195,7 @@ class GameFragment : Fragment() {
                                 repository.insertScore(
                                     ScoreEntity(
                                         playerId = MenuFragment.selectedPlayerId,
-                                        score = score,
+                                        score = gameViewModel.score.value ?: 0,
                                         difficulty = GameSettings.instance.difficulty,
                                         timestamp = System.currentTimeMillis()
                                     )
@@ -238,21 +240,20 @@ class GameFragment : Fragment() {
                 }
                 when (type) {
                     BugType.NORMAL -> {
-                        score += 10
+                        gameViewModel.addScore(10)
                     }
                     BugType.COIN -> {
                         val bonus = if (goldRate > 0) (goldRate / 10.0).toInt().coerceAtLeast(50) else 50
-                        score += bonus
+                        gameViewModel.addScore(bonus)
                     }
                     BugType.BONUS_TILT -> {
                         enableTiltControl()
                         playScream()
                     }
                     BugType.POISON -> {
-                        score = (score - 20).coerceAtLeast(0)
+                        gameViewModel.addScore(-20)
                     }
                 }
-                tvScore.text = "Очки: $score"
                 gameLayout.removeView(this)
             }
         }
@@ -270,6 +271,7 @@ class GameFragment : Fragment() {
 
     private fun enableTiltControl() {
         tiltEnabled = true
+        gameViewModel.setTiltEnabled(true)
         accelerometer?.let {
             sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
         }
@@ -277,6 +279,7 @@ class GameFragment : Fragment() {
 
     private fun disableTiltControl() {
         tiltEnabled = false
+        gameViewModel.setTiltEnabled(false)
         sensorManager?.unregisterListener(sensorListener)
     }
 
