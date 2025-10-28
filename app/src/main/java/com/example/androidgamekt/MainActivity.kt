@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.viewpager2.widget.ViewPager2
 import com.example.androidgamekt.data.GameRepository
 import com.example.androidgamekt.util.ViewPagerAdapter
+import com.example.androidgamekt.widget.GoldRateWidgetUpdateService
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import kotlinx.coroutines.CoroutineScope
@@ -44,5 +45,8 @@ class MainActivity : AppCompatActivity() {
                 6 -> tab.text = "Регистрация"
             }
         }.attach()
+
+        // Kick a background fetch to update widget on app start
+        startService(android.content.Intent(this, GoldRateWidgetUpdateService::class.java))
     }
 }

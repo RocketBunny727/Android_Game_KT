@@ -57,6 +57,8 @@ class GameFragment : Fragment() {
     private var tiltX: Float = 0f
     private var tiltY: Float = 0f
     private var mediaPlayer: MediaPlayer? = null
+    private var goldRate: Double = 0.0
+    private var lastGoldSpawnTime = 0L
 
     private val difficultySettings = mapOf(
         0 to DifficultyConfig(1f, 5, 10, 60, 0.1f), // Лёгкий
@@ -127,6 +129,9 @@ class GameFragment : Fragment() {
         observedSettingsVersion = GameSettings.instance.version
         tiltEnabled = false
         stopSound()
+        // load last known gold rate from shared prefs
+        val stored = com.example.androidgamekt.util.GoldRateStore.load(requireContext()).first
+        if (stored > 0) goldRate = stored
     }
 
     private fun resolveConfig(): DifficultyConfig {
@@ -169,6 +174,12 @@ class GameFragment : Fragment() {
                     if (!hasTiltBonus && (timeElapsed - lastFixedBonusTime) >= 15000L) {
                         addBug(BugType.BONUS_TILT)
                         lastFixedBonusTime = timeElapsed
+                    }
+
+                    // Golden bug every 20 seconds
+                    if ((timeElapsed - lastGoldSpawnTime) >= 20000L) {
+                        addBug(BugType.COIN) // reuse COIN type for golden bug image/logic
+                        lastGoldSpawnTime = timeElapsed
                     }
 
                     updateBugs()
@@ -230,7 +241,8 @@ class GameFragment : Fragment() {
                         score += 10
                     }
                     BugType.COIN -> {
-                        score += 50
+                        val bonus = if (goldRate > 0) (goldRate / 10.0).toInt().coerceAtLeast(50) else 50
+                        score += bonus
                     }
                     BugType.BONUS_TILT -> {
                         enableTiltControl()
